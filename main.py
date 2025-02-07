@@ -39,7 +39,7 @@ JERSEY_POSITIONS = {
 class Dataset(BaseModel):
     """Dataset."""
 
-    teams: dict[str, float]
+    team_weights: dict[str, float]
     budget: float
     supersub: Player | None = None
     starting_players: dict[str, Player]
@@ -68,7 +68,7 @@ class Model:
             self.players_by_team[player.team].append(player_name)
             self.player_points[player_name] = (
                 player.points + (player.adjust or 0)
-            ) * self.dataset.teams[player.team]
+            ) * self.dataset.team_weights[player.team]
 
         if self.dataset.supersub is None:
             self.supersub_cost: float = 0
@@ -150,7 +150,7 @@ class Model:
 
     def constrain_jerseys_per_team(self) -> None:
         """Apply a limit on jerseys per team (include supersub)."""
-        for team in self.dataset.teams:
+        for team in self.dataset.team_weights:
             self.problem += sum(
                 self.players_in_jerseys[player_name, jersey]
                 for jersey in JERSEY_POSITIONS
