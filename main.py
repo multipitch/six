@@ -14,6 +14,7 @@ from typing import Self
 
 from pulp import LpBinary, LpMaximize, LpProblem, LpVariable
 from pulp.apis import PULP_CBC_CMD
+from pulp.constants import LpStatusOptimal
 from pydantic import BaseModel
 
 MAX_PLAYERS_PER_TEAM = 4
@@ -90,6 +91,7 @@ class Model:
         self.problem: LpProblem
         self.players_in_jerseys: dict[tuple[str, int], LpVariable]
         self.players_are_captain: dict[str, LpVariable]
+
         self.team: dict[int, str]
         self.captain: str
         self.score: float
@@ -113,15 +115,15 @@ class Model:
 
     def define_decision_variables(self) -> None:
         """Define decision variables."""
-        self.players_in_jerseys = {}
-        for player_name, player in self.dataset.starting_players.items():
-            for jersey, position in JERSEY_POSITIONS.items():
-                if player.position == position:
-                    self.players_in_jerseys[player_name, jersey] = LpVariable(
-                        name=f"{player_name} wears {jersey}", cat=LpBinary
-                    )
-                else:
-                    self.players_in_jerseys[player_name, jersey] = 0
+        self.players_in_jerseys = {
+            (player_name, jersey): (
+                LpVariable(name=f"{player_name} wears {jersey}", cat=LpBinary)
+                if player.position == position
+                else 0
+            )
+            for player_name, player in self.dataset.starting_players.items()
+            for jersey, position in JERSEY_POSITIONS.items()
+        }
         self.players_are_captain = {
             player_name: LpVariable(name=f"{player_name} is captain", cat=LpBinary)
             for player_name in self.dataset.starting_players
@@ -129,14 +131,21 @@ class Model:
 
     def define_objective(self) -> None:
         """Define objective function; total points for selected team."""
-        self.problem += sum(
-            self.player_points[player_name]
-            * self.players_in_jerseys[player_name, jersey]
-            for player_name in self.dataset.starting_players
-            for jersey in JERSEY_POSITIONS
-        ) + sum(
-            self.player_points[player_name] * self.players_are_captain[player_name]
-            for player_name in self.dataset.starting_players
+        # Adds points a second time for the player that is the captain.
+        # We can do this because the captain will always be a selected
+        # player in an optimised example.
+        self.problem += (
+            self.supersub_points * 3
+            + sum(
+                self.player_points[player_name]
+                * self.players_in_jerseys[player_name, jersey]
+                for player_name in self.dataset.starting_players
+                for jersey in JERSEY_POSITIONS
+            )
+            + sum(
+                self.player_points[player_name] * self.players_are_captain[player_name]
+                for player_name in self.dataset.starting_players
+            )
         )
 
     def constrain_budget(self) -> None:
@@ -186,14 +195,19 @@ class Model:
             if isinstance(v, LpVariable) and v.value()
         }
         self.captain = [k for k, v in self.players_are_captain.items() if v.value()][0]
-        self.score = self.problem.objective.value() + 3 * self.supersub_points
+        self.score = self.problem.objective.value()
         self.cost = self.supersub_cost + sum(
             self.dataset.starting_players[player_name].cost
             for player_name in self.team.values()
         )
+        if self.problem.status != LpStatusOptimal:
+            raise ValueError("Optimal solution not found.")
 
     def print(self) -> None:
-        """Print the results."""
+        """Print the results of an optimized model."""
+        if self.problem.status != LpStatusOptimal:
+            print("Model has not been solved.")
+            return
         print("Team optimised.")
         print("\nTeam Sheet:")
         for jersey in JERSEY_POSITIONS:
