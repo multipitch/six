@@ -1,0 +1,10 @@
+bandit
+black
+flake8
+flake8-bugbear
+flake8-pyproject
+isort
+mypy
+pip-tools
+pre-commit
+pylint
