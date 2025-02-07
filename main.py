@@ -41,7 +41,7 @@ class Dataset(BaseModel):
 
     team_weights: dict[str, float]
     budget: float
-    supersub: Player | None = None
+    supersub: SuperSub | None = None
     starting_players: dict[str, Player]
 
 
@@ -54,6 +54,12 @@ class Player(BaseModel):
     cost: float
     adjust: float | None = 0
     note: str | None = None
+
+
+class SuperSub(Player):
+    """A supersub."""
+
+    name: str
 
 
 class Model:
@@ -71,18 +77,20 @@ class Model:
             ) * self.dataset.team_weights[player.team]
 
         if self.dataset.supersub is None:
-            self.supersub_cost: float = 0
+            self.supersub_cost: float = 0.0
             self.supersub_team: str | None = None
-            self.supersub_points: float = 0
+            self.supersub_points: float = 0.0
+            self.supersub_name: str | None = None
         else:
             self.supersub_cost = self.dataset.supersub.cost
             self.supersub_team = self.dataset.supersub.team
             self.supersub_points = self.dataset.supersub.points
+            self.supersub_name = self.dataset.supersub.name
 
         self.problem: LpProblem
         self.players_in_jerseys: dict[tuple[str, int], LpVariable]
         self.players_are_captain: dict[str, LpVariable]
-        self.team: list[tuple[int, str]]
+        self.team: dict[int, str]
         self.captain: str
         self.score: float
         self.cost: float
@@ -172,29 +180,30 @@ class Model:
     def solve(self) -> None:
         """Solve the problem."""
         self.problem.solve(PULP_CBC_CMD(msg=0))
-        self.team = sorted(
-            [
-                (k[1], k[0])
-                for k, v in self.players_in_jerseys.items()
-                if isinstance(v, LpVariable) and v.value()
-            ]
-        )
+        self.team = {
+            jersey: player_name
+            for (player_name, jersey), v in self.players_in_jerseys.items()
+            if isinstance(v, LpVariable) and v.value()
+        }
         self.captain = [k for k, v in self.players_are_captain.items() if v.value()][0]
         self.score = self.problem.objective.value() + 3 * self.supersub_points
         self.cost = self.supersub_cost + sum(
             self.dataset.starting_players[player_name].cost
-            for _, player_name in self.team
+            for player_name in self.team.values()
         )
 
     def print(self) -> None:
         """Print the results."""
-        print("Team Sheet:")
-        for jersey, player_name in self.team:
+        print("Team optimised.")
+        print("\nTeam Sheet:")
+        for jersey in JERSEY_POSITIONS:
+            player_name = self.team.get(jersey, "---")
             captain = "[C]" if player_name == self.captain else ""
             print(f"{jersey:>2}: {player_name} {captain}")
-        print(f"\nExpected score: {self.score:.2f}")
-        print(f"Budget:         {self.dataset.budget:.2f}")
-        print(f"Team Cost:      {self.cost:.2f}")
+        print(f"\nSupersub:        {self.supersub_name or "---"}")
+        print(f"Expected score:  {self.score:.2f}")
+        print(f"Budget:          {self.dataset.budget:.2f}")
+        print(f"Team Cost:       {self.cost:.2f}")
 
     @classmethod
     def from_json(cls, file: str | Path) -> Self:
