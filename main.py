@@ -2,8 +2,8 @@
 main.py
 
 Creates optimal team based on points and costs.
-Does not consider substitute players - the user needs to
-explicitly select a supersub, if required.
+Does not consider substitute players - the user needs to explicitly select a
+supersub, if required.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from pulp.apis import PULP_CBC_CMD
 from pulp.constants import LpStatusOptimal
 from pydantic import BaseModel
 
-MAX_PLAYERS_PER_TEAM = 4
+MAX_PLAYERS_FROM_ANY_TEAM = 4
 JERSEY_POSITIONS = {
     1: "Prop",
     2: "Hooker",
@@ -59,6 +59,10 @@ class Player(BaseModel):
 
 class SuperSub(Player):
     """A supersub."""
+
+    # Players are in a dict, keyed by player name.
+    # Since a supersub is not in such a dict, need to include its name within
+    # the SuperSub class.
 
     name: str
 
@@ -117,7 +121,7 @@ class Model:
         """Define decision variables."""
         self.players_in_jerseys = {
             (player_name, jersey): (
-                LpVariable(name=f"{player_name} wears {jersey}", cat=LpBinary)
+                LpVariable(name=f"{player_name} wears number {jersey}", cat=LpBinary)
                 if player.position == position
                 else 0
             )
@@ -172,7 +176,7 @@ class Model:
                 self.players_in_jerseys[player_name, jersey]
                 for jersey in JERSEY_POSITIONS
                 for player_name in self.players_by_team[team]
-            ) <= MAX_PLAYERS_PER_TEAM - (self.supersub_team == team)
+            ) <= MAX_PLAYERS_FROM_ANY_TEAM - (self.supersub_team == team)
 
     def constrain_number_of_captains(self) -> None:
         """Ensure there is a maximum of one captain."""
