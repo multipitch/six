@@ -17,7 +17,9 @@ from pulp.apis import PULP_CBC_CMD
 from pulp.constants import LpStatusOptimal
 from pydantic import BaseModel
 
-MAX_PLAYERS_FROM_ANY_TEAM = 4
+MAX_PLAYERS_FROM_ANY_COUNTRY = 4
+SUPERSUB_MULTIPLIER = 3
+CAPTAIN_MULTIPLIER = 2
 JERSEY_POSITIONS = {
     1: "Prop",
     2: "Hooker",
@@ -40,7 +42,7 @@ JERSEY_POSITIONS = {
 class Dataset(BaseModel):
     """Dataset."""
 
-    team_weights: dict[str, float]
+    country_weights: dict[str, float]
     budget: float
     supersub: SuperSub | None = None
     starting_players: dict[str, Player]
@@ -49,7 +51,7 @@ class Dataset(BaseModel):
 class Player(BaseModel):
     """A player."""
 
-    team: str
+    country: str
     position: str
     points: float
     cost: float
@@ -61,8 +63,8 @@ class SuperSub(Player):
     """A supersub."""
 
     # Players are in a dict, keyed by player name.
-    # Since a supersub is not in such a dict, need to include its name within
-    # the SuperSub class.
+    # Since a supersub is not in such a dict, need to include its name
+    # within the SuperSub class.
 
     name: str
 
@@ -73,24 +75,30 @@ class Model:
     def __init__(self, dataset: Dataset) -> None:
         self.dataset = dataset
 
-        self.players_by_team = defaultdict(list)
-        self.player_points = {}
+        self.players_by_country = defaultdict(list)
+        self.predicted_player_points = {}
         for player_name, player in self.dataset.starting_players.items():
-            self.players_by_team[player.team].append(player_name)
-            self.player_points[player_name] = (
+            self.players_by_country[player.country].append(player_name)
+            self.predicted_player_points[player_name] = (
                 player.points + (player.adjust or 0)
-            ) * self.dataset.team_weights[player.team]
+            ) * self.dataset.country_weights[player.country]
 
         if self.dataset.supersub is None:
             self.supersub_cost: float = 0.0
-            self.supersub_team: str | None = None
+            self.supersub_country: str | None = None
             self.supersub_points: float = 0.0
+            self.supersub_adjust: float | None = 0.0
             self.supersub_name: str | None = None
+            self.predicted_supersub_points: float = 0.0
         else:
             self.supersub_cost = self.dataset.supersub.cost
-            self.supersub_team = self.dataset.supersub.team
+            self.supersub_country = self.dataset.supersub.country
             self.supersub_points = self.dataset.supersub.points
+            self.supersub_adjust = self.dataset.supersub.adjust
             self.supersub_name = self.dataset.supersub.name
+            self.predicted_supersub_points = (
+                self.supersub_points + (self.supersub_adjust or 0)
+            ) * self.dataset.country_weights[self.supersub_country]
 
         self.problem: LpProblem
         self.players_in_jerseys: dict[tuple[str, int], LpVariable]
@@ -113,7 +121,7 @@ class Model:
         self.define_objective()
         self.constrain_budget()
         self.constrain_jerseys_per_player()
-        self.constrain_jerseys_per_team()
+        self.constrain_jerseys_per_country()
         self.constrain_number_of_captains()
         self.constrain_players_per_jersey()
 
@@ -135,21 +143,20 @@ class Model:
 
     def define_objective(self) -> None:
         """Define objective function; total points for selected team."""
-        # Adds points a second time for the player that is the captain.
-        # We can do this because the captain will always be a selected
-        # player in an optimised example.
         self.problem += (
-            self.supersub_points * 3
+            self.predicted_supersub_points * SUPERSUB_MULTIPLIER
             + sum(
-                self.player_points[player_name]
+                self.predicted_player_points[player_name]
                 * self.players_in_jerseys[player_name, jersey]
                 for player_name in self.dataset.starting_players
                 for jersey in JERSEY_POSITIONS
             )
             + sum(
-                self.player_points[player_name] * self.players_are_captain[player_name]
+                self.predicted_player_points[player_name]
+                * self.players_are_captain[player_name]
                 for player_name in self.dataset.starting_players
             )
+            * (CAPTAIN_MULTIPLIER - 1)
         )
 
     def constrain_budget(self) -> None:
@@ -169,21 +176,22 @@ class Model:
                 for jersey in JERSEY_POSITIONS
             )
 
-    def constrain_jerseys_per_team(self) -> None:
+    def constrain_jerseys_per_country(self) -> None:
         """Apply a limit on jerseys per team (include supersub)."""
-        for team in self.dataset.team_weights:
+        for country in self.dataset.country_weights:
             self.problem += sum(
                 self.players_in_jerseys[player_name, jersey]
                 for jersey in JERSEY_POSITIONS
-                for player_name in self.players_by_team[team]
-            ) <= MAX_PLAYERS_FROM_ANY_TEAM - (self.supersub_team == team)
+                for player_name in self.players_by_country[country]
+            ) <= MAX_PLAYERS_FROM_ANY_COUNTRY - (self.supersub_country == country)
 
     def constrain_number_of_captains(self) -> None:
-        """Ensure there is a maximum of one captain."""
-        self.problem += sum(self.players_are_captain.values()) <= 1
+        """Ensure there is exactly one captain."""
+        # Zero captains is allowed, but can never be optimal.
+        self.problem += sum(self.players_are_captain.values()) == 1
 
     def constrain_players_per_jersey(self) -> None:
-        """Ensure each jersey is assinged to at most one player."""
+        """Ensure each jersey is assigned to at most one player."""
         for jersey in JERSEY_POSITIONS:
             self.problem += 1 >= sum(
                 self.players_in_jerseys[player_name, jersey]
@@ -217,10 +225,12 @@ class Model:
         for jersey in JERSEY_POSITIONS:
             name = self.team.get(jersey)
             player_str = f"{name or "---"}{" [C]" if name == self.captain else ""}"
-            team_ = f" ({self.dataset.starting_players[name].team})" if name else ""
-            print(f"{jersey:>2}: {player_str:<24}{team_}")
+            country_str = (
+                f" ({self.dataset.starting_players[name].country})" if name else ""
+            )
+            print(f"{jersey:>2}:  {player_str:<24}{country_str}")
         if self.supersub_name:
-            print(f"\nSupersub:        {self.supersub_name} ({self.supersub_team})")
+            print(f"\nSupersub:        {self.supersub_name} ({self.supersub_country})")
         print(f"Expected score:  {self.score:.2f}")
         print(f"Budget:          {self.dataset.budget:.2f}")
         print(f"Team Cost:       {self.cost:.2f}")
