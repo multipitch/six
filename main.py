@@ -20,23 +20,6 @@ from pydantic import BaseModel
 MAX_PLAYERS_FROM_ANY_COUNTRY = 4
 SUPERSUB_MULTIPLIER = 3
 CAPTAIN_MULTIPLIER = 2
-# JERSEY_POSITIONS = {
-#     1: "Prop",
-#     2: "Hooker",
-#     3: "Prop",
-#     4: "Second-Row",
-#     5: "Second-Row",
-#     6: "Back-Row",
-#     7: "Back-Row",
-#     8: "Back-Row",
-#     9: "Scrum-Half",
-#     10: "Fly-Half",
-#     11: "Back Three",
-#     12: "Centre",
-#     13: "Centre",
-#     14: "Back Three",
-#     15: "Back Three",
-# }
 POSITIONS = {
     "Prop": [1, 3],
     "Hooker": [2],
