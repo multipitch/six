@@ -215,10 +215,12 @@ class Model:
         print("Team optimised.")
         print("\nTeam Sheet:")
         for jersey in JERSEY_POSITIONS:
-            player_name = self.team.get(jersey, "---")
-            captain = "[C]" if player_name == self.captain else ""
-            print(f"{jersey:>2}: {player_name} {captain}")
-        print(f"\nSupersub:        {self.supersub_name or "---"}")
+            name = self.team.get(jersey)
+            player_str = f"{name or "---"}{" [C]" if name == self.captain else ""}"
+            team_ = f" ({self.dataset.starting_players[name].team})" if name else ""
+            print(f"{jersey:>2}: {player_str:<24}{team_}")
+        if self.supersub_name:
+            print(f"\nSupersub:        {self.supersub_name} ({self.supersub_team})")
         print(f"Expected score:  {self.score:.2f}")
         print(f"Budget:          {self.dataset.budget:.2f}")
         print(f"Team Cost:       {self.cost:.2f}")
