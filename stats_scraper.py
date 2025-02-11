@@ -11,11 +11,14 @@ from typing import Any
 
 import requests
 
+# Update this every week.
+WEEK = 3
+
 # TOKEN is obtained by logging in on browser.
 with open("TOKEN", encoding="utf-8") as f:
     TOKEN = f.read()
 
-WEEK = 3
+
 TIMEOUT = 5
 HEADERS = {  # Some of these could possibly be omitted.
     "accept": "application/json",
@@ -62,16 +65,6 @@ STAT_NAME_DICT = {
     "Conceded penalty": "conceded_penalty",
     "Defenders beaten": "defenders_beaten",
 }
-POSITION_CODES = {
-    6: "back-three",
-    7: "centres",
-    8: "fly-half",
-    9: "scrum-half",
-    10: "back-row",
-    11: "second-row",
-    12: "front-row",
-    13: "hooker",
-}
 
 
 def get_data() -> None:
@@ -92,7 +85,8 @@ def get_data() -> None:
             "searchonly": 1,
         }
     }
-    # Run once to get number of players
+
+    # First request to PLAYER_URL is to get the number of players in the league.
     players_request_json["filters"]["pageSize"] = 1
     response = requests.post(
         PLAYER_URL,
@@ -102,7 +96,8 @@ def get_data() -> None:
         timeout=TIMEOUT,
     )
     player_count = int(response.json()["total"])
-    # Run again to get all results in one go.
+
+    # Second request to PLAYER_URL  is to get data for all players.
     players_request_json["filters"]["pageSize"] = math.ceil(player_count / 10.0) * 10
     response = requests.post(
         PLAYER_URL,
@@ -115,6 +110,7 @@ def get_data() -> None:
     with open("players.json", "w", encoding="utf-8") as fp:
         json.dump(obj=players_dict, fp=fp, indent=4)
 
+    # For each player, request statistics from STATS_URL.
     stats_dict: dict[int, Any] = {}
     for player in players_dict["joueurs"]:
         player_id = player["id"]
