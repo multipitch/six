@@ -88,25 +88,25 @@ def get_data() -> None:
 
     # First request to PLAYER_URL is to get the number of players in the league.
     players_request_json["filters"]["pageSize"] = 1
-    response = requests.post(
+    single_player_response = requests.post(
         PLAYER_URL,
         headers=HEADERS,
         json=players_request_json,
         params=PARAMS,
         timeout=TIMEOUT,
     )
-    player_count = int(response.json()["total"])
+    player_count = int(single_player_response.json()["total"])
 
     # Second request to PLAYER_URL  is to get data for all players.
     players_request_json["filters"]["pageSize"] = math.ceil(player_count / 10.0) * 10
-    response = requests.post(
+    all_players_response = requests.post(
         PLAYER_URL,
         headers=HEADERS,
         json=players_request_json,
         params=PARAMS,
         timeout=TIMEOUT,
     )
-    players_dict = response.json()
+    players_dict = all_players_response.json()
     with open("players.json", "w", encoding="utf-8") as fp:
         json.dump(obj=players_dict, fp=fp, indent=4)
 
@@ -117,15 +117,14 @@ def get_data() -> None:
         stats_request_json = {
             "credentials": {"idj": f"{WEEK}", "idf": player_id, "detail": True}
         }
-        response = requests.post(
+        stats_response = requests.post(
             STATS_URL,
             json=stats_request_json,
             headers=HEADERS,
             params=PARAMS,
             timeout=TIMEOUT,
         )
-        stats_dict[player_id] = response.json()
-
+        stats_dict[player_id] = stats_response.json()
     with open("stats.json", "w", encoding="utf-8") as fp:
         json.dump(obj=stats_dict, fp=fp, indent=4)
 
