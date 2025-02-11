@@ -6,13 +6,23 @@
 #
 annotated-types==0.7.0
     # via pydantic
+certifi==2025.1.31
+    # via requests
+charset-normalizer==3.4.1
+    # via requests
+idna==3.10
+    # via requests
 pulp==2.9.0
     # via -r requirements.in
 pydantic==2.10.6
     # via -r requirements.in
 pydantic-core==2.27.2
     # via pydantic
+requests==2.32.3
+    # via -r requirements.in
 typing-extensions==4.12.2
     # via
     #   pydantic
     #   pydantic-core
+urllib3==2.3.0
+    # via requests

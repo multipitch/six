@@ -96,8 +96,12 @@ stevedore==5.4.0
     # via bandit
 tomlkit==0.13.2
     # via pylint
+types-requests==2.32.0.20241016
+    # via -r dev-requirements.in
 typing-extensions==4.12.2
     # via mypy
+urllib3==2.3.0
+    # via types-requests
 virtualenv==20.29.1
     # via pre-commit
 wheel==0.45.1
