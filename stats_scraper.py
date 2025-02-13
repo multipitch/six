@@ -46,25 +46,6 @@ HEADERS = {  # Some of these could possibly be omitted.
 STATS_URL = "https://fantasy.sixnationsrugby.com/v1/private/statsjoueur"
 PLAYER_URL = "https://fantasy.sixnationsrugby.com/v1/private/searchjoueurs"
 PARAMS = {"lg": "en"}
-STAT_NAME_DICT = {
-    "Man of the match": "man_of_the_match",
-    "Penalty": "penalty",
-    "Assists": "assist",
-    "Kick 50-22": "50_22",
-    "Tackles": "tackle",
-    "Drop goal": "drop_goal",
-    "Attacking scrum win": "scrum_win",
-    "Try": "try",
-    "Red cards ": "red_card",  # sic
-    "Metres carried": "metres_carried",
-    "Yellow cards": "yellow_card",
-    "Conversion": "conversion",
-    "Offloads": "offload",
-    "Lineout steal": "lineout_steal",
-    "Breakdown steal": "breakdown_steal",
-    "Conceded penalty": "conceded_penalty",
-    "Defenders beaten": "defenders_beaten",
-}
 
 
 def get_data() -> None:

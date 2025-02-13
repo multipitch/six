@@ -6,8 +6,14 @@ extend-ignore = ["E203", "E501", "E701"]
 [tool.isort]
 profile = "black"
 
+[tool.pylint.master]
+load-plugins = "pylint_pydantic"
+
 [tool.pylint."messages control"]
 disable = ["R"]
+
+[tool.pylint."miscellaneous"]
+notes = ["FIXME", "XXX"]
 
 [tool.mypy]
 strict = true

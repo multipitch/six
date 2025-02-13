@@ -8,4 +8,5 @@ mypy
 pip-tools
 pre-commit
 pylint
+pylint-pydantic
 types-requests
