@@ -221,4 +221,4 @@ class Model:
 
 
 if __name__ == "__main__":
-    model = Model.from_json("data.json")
+    model = Model.from_json("data/data.json")

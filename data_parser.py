@@ -190,18 +190,18 @@ class PlayerMatchStats:
 if __name__ == "__main__":
     import json
 
-    with open("players.json", encoding="utf-8") as fp:
+    with open("data/players.json", encoding="utf-8") as fp:
         players_json = json.load(fp)
 
-    with open("stats.json", encoding="utf-8") as fp:
+    with open("data/stats.json", encoding="utf-8") as fp:
         stats_json = json.load(fp)
 
     PLAYERS_DATA = PlayersData.model_validate_json(json.dumps(players_json))
     STATS_DATA = PlayersStatsData.model_validate_json(json.dumps(stats_json))
 
-    with open("players_clean.json", mode="w", encoding="utf-8") as fp:
+    with open("data/players_clean.json", mode="w", encoding="utf-8") as fp:
         fp.write(PLAYERS_DATA.model_dump_json(indent=4))
-    with open("stats_clean.json", mode="w", encoding="utf-8") as fp:
+    with open("data/tats_clean.json", mode="w", encoding="utf-8") as fp:
         fp.write(STATS_DATA.model_dump_json(indent=4))
 
     PLAYERS = {k: Player(v, STATS_DATA[k]) for k, v in PLAYERS_DATA.players.items()}

@@ -15,7 +15,7 @@ import requests
 WEEK = 3
 
 # TOKEN is obtained by logging in on browser.
-with open("TOKEN", encoding="utf-8") as f:
+with open("data/TOKEN", encoding="utf-8") as f:
     TOKEN = f.read()
 
 
@@ -88,7 +88,7 @@ def get_data() -> None:
         timeout=TIMEOUT,
     )
     players_dict = all_players_response.json()
-    with open("players.json", "w", encoding="utf-8") as fp:
+    with open("data/players.json", "w", encoding="utf-8") as fp:
         json.dump(obj=players_dict, fp=fp, indent=4)
 
     # For each player, request statistics from STATS_URL.
@@ -106,7 +106,7 @@ def get_data() -> None:
             timeout=TIMEOUT,
         )
         stats_dict[player_id] = stats_response.json()
-    with open("stats.json", "w", encoding="utf-8") as fp:
+    with open("data/stats.json", "w", encoding="utf-8") as fp:
         json.dump(obj=stats_dict, fp=fp, indent=4)
 
 
