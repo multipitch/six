@@ -6,6 +6,7 @@ Make sense of raw 6 nations JSON data.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import TypedDict
 
 from pydantic import BaseModel, Field, RootModel, field_validator
@@ -22,6 +23,9 @@ from pydantic import BaseModel, Field, RootModel, field_validator
 #       - A table with each row being a player on a week, there would be
 #         fewer columns, but more rows, but this might not map as well
 #         onto the task of predicting player scores
+
+# Update this every week.
+WEEK = 3
 
 STAT_NAMES = {
     "Man of the match": "man_of_the_match",
@@ -49,6 +53,8 @@ APPEARANCE_TYPES = {
     "T": "started",
 }
 
+DEFAULT_PREV_APPEARANCES = ["did_not_play"] * (WEEK - 1)
+
 POSITION_CODES = {
     6: "back_three",
     7: "centre",
@@ -59,6 +65,8 @@ POSITION_CODES = {
     12: "prop",
     13: "hooker",
 }
+
+TEAMS = ["IRE", "ENG", "FRA", "SCO", "ITA", "WAL"]
 
 
 # TODO: Flatten this as it's an unnecessary layer
@@ -81,9 +89,17 @@ class PlayerData(BaseModel):
     name_short: str = Field(alias="nom")
     country: str = Field(alias="trgclub")
     position: str = Field(alias="id_position")
-    appearance_types: list[str] = Field(alias="forme")
+    upcoming_appearance_type: str = Field(alias="formeprev", default="undefined")
+    prev_appearance_types: list[str] = Field(
+        alias="forme", default=DEFAULT_PREV_APPEARANCES
+    )
+    # TODO: Not working where player hasn't previously appeared.
 
-    @field_validator("appearance_types", mode="before")
+    @field_validator("upcoming_appearance_type", mode="before")
+    def _get_upcoming_appearance_type(cls, v: dict[str, str]) -> str:
+        return APPEARANCE_TYPES[v["status"]]
+
+    @field_validator("prev_appearance_types", mode="before")
     def _flatten_form(cls, v: dict[str, list[str]]) -> list[str]:
         return [APPEARANCE_TYPES[t] for t in v["items"]]
 
@@ -146,6 +162,7 @@ class Player:
         self.name_short = data.name_short
         self.country = data.country
         self.position = data.position
+        self.upcoming_appearance_type = data.upcoming_appearance_type
         self.match_stats: dict[int, PlayerMatchStats] = {}
 
         self.get_match_stats(data, stats)
@@ -154,7 +171,7 @@ class Player:
         """Get stats for all matches."""
         for i, player_match_stats_data in enumerate(stats.match_stats):
             self.match_stats[i] = PlayerMatchStats(
-                data.appearance_types[i], player_match_stats_data
+                data.prev_appearance_types[i], player_match_stats_data
             )
 
 
@@ -205,3 +222,15 @@ if __name__ == "__main__":
         fp.write(STATS_DATA.model_dump_json(indent=4))
 
     PLAYERS = {k: Player(v, STATS_DATA[k]) for k, v in PLAYERS_DATA.players.items()}
+
+    STARTERS_BY_TEAM: dict[str, int] = defaultdict(int)
+    for p in PLAYERS.values():
+        if p.upcoming_appearance_type == "started":
+            STARTERS_BY_TEAM[p.country] += 1
+
+    for team in TEAMS:
+        if STARTERS_BY_TEAM[team] == 0:
+            print(f"No team announced yet for {team}.")
+        elif STARTERS_BY_TEAM[team] != 15:
+            MSG = f"Some number of players other than 15 announced for {team}."
+            raise ValueError(MSG)
