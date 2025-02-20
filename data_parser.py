@@ -218,7 +218,7 @@ if __name__ == "__main__":
 
     with open("data/players_clean.json", mode="w", encoding="utf-8") as fp:
         fp.write(PLAYERS_DATA.model_dump_json(indent=4))
-    with open("data/tats_clean.json", mode="w", encoding="utf-8") as fp:
+    with open("data/stats_clean.json", mode="w", encoding="utf-8") as fp:
         fp.write(STATS_DATA.model_dump_json(indent=4))
 
     PLAYERS = {k: Player(v, STATS_DATA[k]) for k, v in PLAYERS_DATA.players.items()}
