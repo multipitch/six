@@ -11,44 +11,15 @@ from typing import Any
 
 import requests
 
-# Update this every week.
-WEEK = 3
-
 # TOKEN is obtained by logging in on browser.
-with open("data/TOKEN", encoding="utf-8") as f:
-    TOKEN = f.read()
-
 
 TIMEOUT = 5
-HEADERS = {  # Some of these could possibly be omitted.
-    "accept": "application/json",
-    "accept-encoding": "gzip, deflate, br",
-    "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
-    "authorization": f"Token {TOKEN}",
-    "cache-control": "no-cache",
-    "content-length": "37",
-    "content-type": "application/json",
-    "origin": "https://fantasy.sixnationsrugby.com",
-    "pragma": "no-cache",
-    "referer": "https://fantasy.sixnationsrugby.com/",
-    "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"macOS"',
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-origin",
-    "user-agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
-    ),
-    "x-access-key": "600@14.05@",
-}
 STATS_URL = "https://fantasy.sixnationsrugby.com/v1/private/statsjoueur"
 PLAYER_URL = "https://fantasy.sixnationsrugby.com/v1/private/searchjoueurs"
 PARAMS = {"lg": "en"}
 
 
-def get_data() -> None:
+def get_data(token: str, week: int) -> None:
     """Get all data."""
     players_request_json = {
         "filters": {
@@ -60,18 +31,43 @@ def get_data() -> None:
             "partant": False,
             "dreamteam": False,
             "quota": "",
-            "idj": f"{WEEK}",
+            "idj": f"{week}",
             "pageIndex": 0,
             "loadSelect": 0,
             "searchonly": 1,
         }
+    }
+    headers = {  # Some of these could possibly be omitted.
+        "accept": "application/json",
+        "accept-encoding": "gzip, deflate, br",
+        "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
+        "authorization": f"Token {token}",
+        "cache-control": "no-cache",
+        "content-length": "37",
+        "content-type": "application/json",
+        "origin": "https://fantasy.sixnationsrugby.com",
+        "pragma": "no-cache",
+        "referer": "https://fantasy.sixnationsrugby.com/",
+        "sec-ch-ua": (
+            '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"'
+        ),
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"macOS"',
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "user-agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
+        ),
+        "x-access-key": "600@14.05@",
     }
 
     # First request to PLAYER_URL is to get the number of players in the league.
     players_request_json["filters"]["pageSize"] = 1
     single_player_response = requests.post(
         PLAYER_URL,
-        headers=HEADERS,
+        headers=headers,
         json=players_request_json,
         params=PARAMS,
         timeout=TIMEOUT,
@@ -82,7 +78,7 @@ def get_data() -> None:
     players_request_json["filters"]["pageSize"] = math.ceil(player_count / 10.0) * 10
     all_players_response = requests.post(
         PLAYER_URL,
-        headers=HEADERS,
+        headers=headers,
         json=players_request_json,
         params=PARAMS,
         timeout=TIMEOUT,
@@ -96,12 +92,12 @@ def get_data() -> None:
     for player in players_dict["joueurs"]:
         player_id = player["id"]
         stats_request_json = {
-            "credentials": {"idj": f"{WEEK}", "idf": player_id, "detail": True}
+            "credentials": {"idj": f"{week}", "idf": player_id, "detail": True}
         }
         stats_response = requests.post(
             STATS_URL,
             json=stats_request_json,
-            headers=HEADERS,
+            headers=headers,
             params=PARAMS,
             timeout=TIMEOUT,
         )
@@ -110,4 +106,12 @@ def get_data() -> None:
         json.dump(obj=stats_dict, fp=fp, indent=4)
 
 
-get_data()
+if __name__ == "__main__":
+    # Get token by logging in with Firefox, going to developer settings
+    # (Ctrl+Shift+I), and then going to Network and copying the token from a
+    # request. Save it to data/TOKEN (just the code).
+    with open("data/TOKEN", encoding="utf-8") as f:
+        TOKEN = f.read().strip()
+    WEEK = int(input("Enter Week to be Optimised: "))
+
+    get_data(TOKEN, WEEK)

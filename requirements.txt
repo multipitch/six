@@ -12,17 +12,29 @@ charset-normalizer==3.4.1
     # via requests
 idna==3.10
     # via requests
+numpy==2.2.3
+    # via pandas
+pandas==2.2.3
+    # via -r requirements.in
 pulp==2.9.0
     # via -r requirements.in
 pydantic==2.10.6
     # via -r requirements.in
 pydantic-core==2.27.2
     # via pydantic
+python-dateutil==2.9.0.post0
+    # via pandas
+pytz==2025.1
+    # via pandas
 requests==2.32.3
     # via -r requirements.in
+six==1.17.0
+    # via python-dateutil
 typing-extensions==4.12.2
     # via
     #   pydantic
     #   pydantic-core
+tzdata==2025.1
+    # via pandas
 urllib3==2.3.0
     # via requests

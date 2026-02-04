@@ -105,8 +105,6 @@ class Model:
         self.cost: float
 
         self.build()
-        self.solve()
-        self.print()
 
     def build(self) -> None:
         """Build the problem."""
@@ -129,6 +127,15 @@ class Model:
             name: LpVariable(name=f"{name} is captain", cat=LpBinary)
             for name in self.players
         }
+
+    def constrain_select_player(self, name: str, select: bool = True) -> None:
+        """Force selection of a player."""
+        self.problem += self.players_are_selected[name] == int(select)
+
+    def constrain_select_captain(self, name: str) -> None:
+        """Force selection of captain."""
+        for name_ in self.players:
+            self.problem += self.players_are_captain[name_] == int(name_ == name)
 
     def define_objective(self) -> None:
         """Define objective function; total points for selected team."""
@@ -222,3 +229,7 @@ class Model:
 
 if __name__ == "__main__":
     model = Model.from_json("data/data.json")
+    # model.constrain_select_player("J. Lowe")
+    # model.constrain_select_captain("J. Lowe")
+    model.solve()
+    model.print()

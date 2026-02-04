@@ -7,8 +7,9 @@ Make sense of raw 6 nations JSON data.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import TypedDict
+from typing import Any, TypedDict
 
+import pandas as pd
 from pydantic import BaseModel, Field, RootModel, field_validator
 
 # TODO: This code seems pretty repetitive - i.e. creating Pydantic
@@ -25,7 +26,7 @@ from pydantic import BaseModel, Field, RootModel, field_validator
 #         onto the task of predicting player scores
 
 # Update this every week.
-WEEK = 3
+WEEK = int(input("Week: "))
 
 STAT_NAMES = {
     "Man of the match": "man_of_the_match",
@@ -90,6 +91,7 @@ class PlayerData(BaseModel):
     country: str = Field(alias="trgclub")
     position: str = Field(alias="id_position")
     upcoming_appearance_type: str = Field(alias="formeprev", default="undefined")
+    cost: float = Field(alias="valeur")
     prev_appearance_types: list[str] = Field(
         alias="forme", default=DEFAULT_PREV_APPEARANCES
     )
@@ -127,6 +129,10 @@ class PlayerMatchStatsData(BaseModel):
     stats: dict[str, int]
     away: bool = Field(alias="club")
     opposition: str = Field(alias="adversaire")
+    minutes_played: int = Field(alias="minutes", default=0)
+    cost_before: float = Field(alias="valeuravant", default=0)
+    cost_after: float = Field(alias="valeurapres", default=0)
+    points: float = 0
 
     @field_validator("score", mode="before")
     def _get_score(cls, v: str) -> tuple[int, int]:
@@ -163,16 +169,35 @@ class Player:
         self.country = data.country
         self.position = data.position
         self.upcoming_appearance_type = data.upcoming_appearance_type
+        self.cost = data.cost
         self.match_stats: dict[int, PlayerMatchStats] = {}
 
         self.get_match_stats(data, stats)
 
     def get_match_stats(self, data: PlayerData, stats: PlayerStatsData) -> None:
         """Get stats for all matches."""
-        for i, player_match_stats_data in enumerate(stats.match_stats):
-            self.match_stats[i] = PlayerMatchStats(
-                data.prev_appearance_types[i], player_match_stats_data
-            )
+        if len(data.prev_appearance_types) != len(stats.match_stats):
+            print(f"Prev stats error: {self.name}")
+        else:
+            for i, player_match_stats_data in enumerate(stats.match_stats):
+                self.match_stats[i] = PlayerMatchStats(
+                    data.prev_appearance_types[i], player_match_stats_data
+                )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dict for entry into a dataframe."""
+        dict_: dict[str, Any] = {}
+        dict_["player_id"] = self.player_id
+        dict_["name"] = self.name
+        dict_["name_short"] = self.name_short
+        dict_["country"] = self.country
+        dict_["position"] = self.position
+        dict_["upcoming_appearance_type"] = self.upcoming_appearance_type
+        dict_["cost"] = self.cost
+        for match_no, stats in self.match_stats.items():
+            for stat_name, stat_value in stats.__dict__.items():
+                dict_[f"{stat_name}_{match_no}"] = stat_value
+        return dict_
 
 
 class PlayerMatchStats:
@@ -185,6 +210,10 @@ class PlayerMatchStats:
         self.opposition = data.opposition
         self.opposition_score = data.score[int(not self.away)]
         self.played = data.played
+        self.minutes_played = data.minutes_played
+        self.cost_before = data.cost_before
+        self.cost_after = data.cost_after
+        self.points = data.points
         self.man_of_the_match = data.stats["man_of_the_match"]
         self.penalty = data.stats["penalty"]
         self.assist = data.stats["assist"]
@@ -234,3 +263,6 @@ if __name__ == "__main__":
         elif STARTERS_BY_TEAM[team] != 15:
             MSG = f"Some number of players other than 15 announced for {team}."
             raise ValueError(MSG)
+
+    PLAYERS_DF = pd.DataFrame([p.to_dict() for p in PLAYERS.values()])
+    PLAYERS_DF.to_csv("data/data.csv")
