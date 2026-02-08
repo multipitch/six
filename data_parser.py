@@ -46,6 +46,7 @@ STAT_NAMES = {
     "Breakdown steal": "breakdown_steal",
     "Conceded penalty": "conceded_penalty",
     "Defenders beaten": "defenders_beaten",
+    "Kicks recovered": "kicks_recovered",
 }
 
 APPEARANCE_TYPES = {
@@ -55,6 +56,7 @@ APPEARANCE_TYPES = {
 }
 
 DEFAULT_PREV_APPEARANCES = ["did_not_play"] * (WEEK - 1)
+# TODO: What do we do before first weekend?
 
 POSITION_CODES = {
     6: "back_three",
@@ -245,11 +247,6 @@ if __name__ == "__main__":
     PLAYERS_DATA = PlayersData.model_validate_json(json.dumps(players_json))
     STATS_DATA = PlayersStatsData.model_validate_json(json.dumps(stats_json))
 
-    with open("data/players_clean.json", mode="w", encoding="utf-8") as fp:
-        fp.write(PLAYERS_DATA.model_dump_json(indent=4))
-    with open("data/stats_clean.json", mode="w", encoding="utf-8") as fp:
-        fp.write(STATS_DATA.model_dump_json(indent=4))
-
     PLAYERS = {k: Player(v, STATS_DATA[k]) for k, v in PLAYERS_DATA.players.items()}
 
     STARTERS_BY_TEAM: dict[str, int] = defaultdict(int)
@@ -264,5 +261,29 @@ if __name__ == "__main__":
             MSG = f"Some number of players other than 15 announced for {team}."
             raise ValueError(MSG)
 
+    with open("data/players_clean.json", mode="w", encoding="utf-8") as fp:
+        fp.write(PLAYERS_DATA.model_dump_json(indent=4))
+    with open("data/stats_clean.json", mode="w", encoding="utf-8") as fp:
+        fp.write(STATS_DATA.model_dump_json(indent=4))
+
     PLAYERS_DF = pd.DataFrame([p.to_dict() for p in PLAYERS.values()])
     PLAYERS_DF.to_csv("data/data.csv")
+
+    DATA = {
+        "budget": 200,
+        "country_weights": {t: 1 for t in TEAMS},
+        "players": {
+            p.name_short: {
+                "name": p.name_short,
+                "player_id": p.player_id,
+                "country": p.country,
+                "position": p.position,
+                "cost": p.cost,
+                "points": STATS_DATA[p_id].match_stats[-1].points,
+                "upcoming_appearance_type": p.upcoming_appearance_type,
+            }
+            for p_id, p in PLAYERS.items()
+        },
+    }
+    with open("data/data.json", mode="w", encoding="utf-8") as fp:
+        json.dump(DATA, fp=fp, indent=4)
