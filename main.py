@@ -31,9 +31,7 @@ POSITIONS = {
     "back_three": [11, 14, 15],
 }
 
-# TODO: Decide whether unconfirmed players are not selectable
-# TODO: Only pick from starters or unconfirmed for starters, captain
-# TODO: Only pick from subs or unconfirmed for supersubs
+# TODO: Decide whether unconfirmed players are / aren't selectable
 
 
 class Dataset(BaseModel):
@@ -99,6 +97,7 @@ class Model:
         self.constrain_players_per_position()
         self.constrain_number_of_captains()
         self.constrain_number_of_supersubs()
+        self.constrain_supersub_or_starter()
 
     def define_decision_variables(self) -> None:
         """Define decision variables."""
@@ -210,6 +209,16 @@ class Model:
     def constrain_number_of_supersubs(self) -> None:
         """Ensure there is zero or one supersub"""
         self.problem += sum(self.players_are_supersub.values()) <= 1
+
+    def constrain_supersub_or_starter(self) -> None:
+        """
+        For players on unannounced teams, ensure they can't be selected
+        as both a supersub and a starter.
+        """
+        for p in self.players_are_supersub.keys() & self.players_are_selected.keys():
+            self.problem += (
+                self.players_are_supersub[p] + self.players_are_selected[p] <= 1
+            )
 
     def solve(self) -> None:
         """Solve the problem."""
