@@ -7,11 +7,8 @@ Based on https://github.com/david-sykes/fantasy-rugby-streamlit.
 
 import json
 import math
-from typing import Any
 
 import requests
-
-# TOKEN is obtained by logging in on browser.
 
 TIMEOUT = 5
 STATS_URL = "https://fantasy.sixnationsrugby.com/v1/private/statsjoueur"
@@ -83,14 +80,13 @@ def get_data(token: str, week: int) -> None:
         params=PARAMS,
         timeout=TIMEOUT,
     )
-    players_dict = all_players_response.json()
-    with open("data/players.json", "w", encoding="utf-8") as fp:
-        json.dump(obj=players_dict, fp=fp, indent=4)
+    players_data = all_players_response.json()
+    players_list = players_data["joueurs"]  # we don't need the rest of the data
+    players_dict = {}
 
-    # For each player, request statistics from STATS_URL.
-    stats_dict: dict[int, Any] = {}
-    for player in players_dict["joueurs"]:
-        player_id = player["id"]
+    # For each player, request statistics from STATS_URL and add to player data.
+    for player_dict in players_list:
+        player_id = player_dict["id"]
         stats_request_json = {
             "credentials": {"idj": f"{week}", "idf": player_id, "detail": True}
         }
@@ -101,17 +97,24 @@ def get_data(token: str, week: int) -> None:
             params=PARAMS,
             timeout=TIMEOUT,
         )
-        stats_dict[player_id] = stats_response.json()
-    with open("data/stats.json", "w", encoding="utf-8") as fp:
-        json.dump(obj=stats_dict, fp=fp, indent=4)
+        player_stats = stats_response.json()
+        player_dict["stats"] = player_stats
+        players_dict[player_id] = player_dict
+
+    with open("data/raw_stats.json", "w", encoding="utf-8") as fp:
+        json.dump(obj=players_dict, fp=fp, indent=4)
 
 
 if __name__ == "__main__":
-    # Get token by logging in with Firefox, going to developer settings
-    # (Ctrl+Shift+I), and then going to Network and copying the token from a
-    # request. Save it to data/TOKEN (just the code).
+
+    # Get TOKEN by logging in with Firefox, going to developer settings
+    # (Ctrl+Shift+I), and then going to Network and copying the token
+    # from a request. Save it to data/TOKEN (just the code string).
+    # This token seems to last days or weeks, so we don't need to do a
+    # load of work to autoamte the login process.
     with open("data/TOKEN", encoding="utf-8") as f:
         TOKEN = f.read().strip()
+
     WEEK = int(input("Enter Week to be Optimised: "))
 
     get_data(TOKEN, WEEK)
