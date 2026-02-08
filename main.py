@@ -1,16 +1,15 @@
 """
 main.py
 
-Creates optimal team based on points and costs.
-Does not consider substitute players - the user needs to explicitly select a
-supersub, if required.
+Creates optimal team based on budget, player cost and predicted player points.
+Allows weighting of teams and forced selection of players.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 from pulp import LpBinary, LpMaximize, LpProblem, LpVariable
 from pulp.apis import PULP_CBC_CMD
@@ -19,17 +18,22 @@ from pydantic import BaseModel
 
 MAX_PLAYERS_FROM_ANY_COUNTRY = 4
 SUPERSUB_MULTIPLIER = 3
+STARTING_SUPERSUB_MULTIPLIER = 0.5
 CAPTAIN_MULTIPLIER = 2
 POSITIONS = {
-    "Prop": [1, 3],
-    "Hooker": [2],
-    "Second-Row": [4, 5],
-    "Back-Row": [6, 7, 8],
-    "Scrum-Half": [9],
-    "Fly-Half": [10],
-    "Centre": [12, 13],
-    "Back Three": [11, 14, 15],
+    "prop": [1, 3],
+    "hooker": [2],
+    "second_row": [4, 5],
+    "back_row": [6, 7, 8],
+    "scrum_half": [9],
+    "fly_half": [10],
+    "centre": [12, 13],
+    "back_three": [11, 14, 15],
 }
+
+# TODO: Decide whether unconfirmed players are not selectable
+# TODO: Only pick from starters or unconfirmed for starters, captain
+# TODO: Only pick from subs or unconfirmed for supersubs
 
 
 class Dataset(BaseModel):
@@ -37,29 +41,22 @@ class Dataset(BaseModel):
 
     country_weights: dict[str, float]
     budget: float
-    supersub: SuperSub | None = None
-    starting_players: dict[str, Player]
+    players: dict[str, Player]
 
 
 class Player(BaseModel):
     """A player."""
 
+    name: str
     country: str
     position: str
     points: float
     cost: float
+    upcoming_appearance_type: Literal[
+        "started", "on_as_sub", "did_not_play", "undefined"
+    ]
     adjust: float | None = 0
     note: str | None = None
-
-
-class SuperSub(Player):
-    """A supersub."""
-
-    # Players are in a dict, keyed by player name.
-    # Since a supersub is not in such a dict, need to include its name
-    # within the SuperSub class.
-
-    name: str
 
 
 class Model:
@@ -68,7 +65,7 @@ class Model:
     def __init__(self, dataset: Dataset) -> None:
         self.dataset = dataset
 
-        self.players = self.dataset.starting_players
+        self.players = self.dataset.players
         self.players_by_country = defaultdict(list)
         self.players_by_position = defaultdict(list)
         self.predicted_player_points = {}
@@ -79,28 +76,13 @@ class Model:
                 player.points + (player.adjust or 0)
             ) * self.dataset.country_weights[player.country]
 
-        if self.dataset.supersub is None:
-            self.supersub_cost: float = 0.0
-            self.supersub_country: str | None = None
-            self.supersub_points: float = 0.0
-            self.supersub_adjust: float | None = 0.0
-            self.supersub_name: str | None = None
-            self.predicted_supersub_points: float = 0.0
-        else:
-            self.supersub_cost = self.dataset.supersub.cost
-            self.supersub_country = self.dataset.supersub.country
-            self.supersub_points = self.dataset.supersub.points
-            self.supersub_adjust = self.dataset.supersub.adjust
-            self.supersub_name = self.dataset.supersub.name
-            self.predicted_supersub_points = (
-                self.supersub_points + (self.supersub_adjust or 0)
-            ) * self.dataset.country_weights[self.supersub_country]
-
         self.problem: LpProblem
         self.players_are_selected: dict[str, LpVariable]
         self.players_are_captain: dict[str, LpVariable]
+        self.players_are_supersub: dict[str, LpVariable]
         self.team: dict[int, str]
         self.captain: str
+        self.supersub: str | None
         self.score: float
         self.cost: float
 
@@ -116,26 +98,58 @@ class Model:
         self.constrain_players_per_country()
         self.constrain_players_per_position()
         self.constrain_number_of_captains()
+        self.constrain_number_of_supersubs()
 
     def define_decision_variables(self) -> None:
         """Define decision variables."""
         self.players_are_selected = {
-            name: LpVariable(name=f"{name} is selected", cat=LpBinary)
-            for name in self.players
+            name: LpVariable(name=f"{name.replace(" ", "_")}_is_selected", cat=LpBinary)
+            for name, p in self.players.items()
+            if p.upcoming_appearance_type in ("started", "undefined")
         }
         self.players_are_captain = {
-            name: LpVariable(name=f"{name} is captain", cat=LpBinary)
-            for name in self.players
+            name: LpVariable(name=f"{name.replace(" ", "_")}_is_captain", cat=LpBinary)
+            for name, p in self.players.items()
+            if p.upcoming_appearance_type in ("started", "undefined")
+        }
+        self.players_are_supersub = {
+            name: LpVariable(name=f"{name.replace(" ", "_")}_is_supersub", cat=LpBinary)
+            for name, p in self.players.items()
+            if p.upcoming_appearance_type in ("on_as_sub", "undefined")
         }
 
     def constrain_select_player(self, name: str, select: bool = True) -> None:
         """Force selection of a player."""
+        uat = self.players[name].upcoming_appearance_type
+        if uat == "on_as_sub":
+            print(
+                f"You are trying to enforce selection of {name} as a starter "
+                "but he is due to come on as a sub."
+            )
+        elif uat == "did_not_play":
+            print(
+                f"You are trying to enforce selection of {name} as a started "
+                "but he is not due to play."
+            )
         self.problem += self.players_are_selected[name] == int(select)
 
     def constrain_select_captain(self, name: str) -> None:
         """Force selection of captain."""
         for name_ in self.players:
             self.problem += self.players_are_captain[name_] == int(name_ == name)
+
+    def constrain_select_supersub(self, name: str) -> None:
+        """Force selection of supersub."""
+        uat = self.players[name].upcoming_appearance_type
+        if uat == "started":
+            print(
+                f"You are trying to enforce selection of {name} as a supersub "
+                "but he is due to start."
+            )
+        for name_ in self.players:
+            self.problem += self.players_are_supersub[name_] == int(name_ == name)
+
+    # TODO: Constraints to force deselection
 
     def define_objective(self) -> None:
         """Define objective function; total points for selected team."""
@@ -148,24 +162,37 @@ class Model:
                 self.predicted_player_points[name] * self.players_are_captain[name]
                 for name in self.players
             )
-            * (CAPTAIN_MULTIPLIER - 1)
-            + self.predicted_supersub_points * SUPERSUB_MULTIPLIER
+            * (CAPTAIN_MULTIPLIER - 1)  # already counted once in sum above
+            + sum(
+                self.predicted_player_points[name]
+                * self.players_are_supersub[name]
+                * (
+                    SUPERSUB_MULTIPLIER
+                    if self.players[name].upcoming_appearance_type != "started"
+                    else STARTING_SUPERSUB_MULTIPLIER
+                )
+                for name in self.players
+            )
         )
 
     def constrain_budget(self) -> None:
         """Ensure selection is within budget limit."""
-        self.problem += self.dataset.budget - self.supersub_cost >= sum(
-            self.players[name].cost * self.players_are_selected[name]
+        self.problem += self.dataset.budget >= sum(
+            self.players[name].cost
+            * (self.players_are_selected[name] + self.players_are_supersub[name])
             for name in self.players
         )
 
     def constrain_players_per_country(self) -> None:
         """Apply a limit on players per country (include supersub)."""
         for country in self.dataset.country_weights:
-            self.problem += sum(
-                self.players_are_selected[name]
-                for name in self.players_by_country[country]
-            ) <= MAX_PLAYERS_FROM_ANY_COUNTRY - (self.supersub_country == country)
+            self.problem += (
+                sum(
+                    (self.players_are_selected[name] + self.players_are_supersub[name])
+                    for name in self.players_by_country[country]
+                )
+                <= MAX_PLAYERS_FROM_ANY_COUNTRY
+            )
 
     def constrain_players_per_position(self) -> None:
         """Can't have too many players in any position."""
@@ -179,6 +206,10 @@ class Model:
         """Ensure there is exactly one captain."""
         # Zero captains is allowed, but can never be optimal.
         self.problem += sum(self.players_are_captain.values()) == 1
+
+    def constrain_number_of_supersubs(self) -> None:
+        """Ensure there is zero or one supersub"""
+        self.problem += sum(self.players_are_supersub.values()) <= 1
 
     def solve(self) -> None:
         """Solve the problem."""
@@ -194,9 +225,11 @@ class Model:
             for name, position in selected_players.items()
         }
         self.captain = [k for k, v in self.players_are_captain.items() if v.value()][0]
+        supersubs = [k for k, v in self.players_are_supersub.items() if v.value()]
+        self.supersub = supersubs[0] if supersubs else None
         self.score = self.problem.objective.value()
-        self.cost = self.supersub_cost + sum(
-            self.players[name].cost for name in selected_players
+        self.cost = sum(self.players[name].cost for name in selected_players) + (
+            self.players[self.supersub].cost if self.supersub else 0
         )
         if self.problem.status != LpStatusOptimal:
             raise ValueError("Optimal solution not found.")
@@ -212,8 +245,9 @@ class Model:
             player_str = f"{name or "---"}{" [C]" if name == self.captain else ""}"
             country_str = f" ({self.players[name].country})" if name else ""
             print(f"{number:>2}:  {player_str:<24}{country_str}")
-        if self.supersub_name:
-            print(f"\nSupersub:        {self.supersub_name} ({self.supersub_country})")
+        if self.supersub:
+            ss_country = self.players[self.supersub].country
+            print(f"\nSupersub:        {self.supersub} ({ss_country})")
         print(f"Expected score:  {self.score:.2f}")
         print(f"Budget:          {self.dataset.budget:.2f}")
         print(f"Team Cost:       {self.cost:.2f}")
@@ -228,8 +262,13 @@ class Model:
 
 
 if __name__ == "__main__":
+
+    # TODO: Have some parameter on selecting players of unknown status
+    #       - all players from unannounced teams are currently avaialable
+    #         as both supersubs and starting players.
     model = Model.from_json("data/data.json")
     # model.constrain_select_player("J. Lowe")
     # model.constrain_select_captain("J. Lowe")
+    model.constrain_select_supersub("N. Timoney")
     model.solve()
     model.print()
