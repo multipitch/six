@@ -1,6 +1,6 @@
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
     -   id: detect-private-key
     -   id: trailing-whitespace
@@ -9,28 +9,28 @@ repos:
     -   id: check-added-large-files
 
 -   repo: https://github.com/pre-commit/mirrors-mypy
-    rev: 'v1.15.0'
+    rev: 'v1.19.1'
     hooks:
     -   id: mypy
-        additional_dependencies: [types-requests==2.32.0.20241016, pydantic==2.10.6]
+        additional_dependencies: [types-requests==2.32.4.20260107, pydantic==2.12.5]
 
 -   repo: https://github.com/pycqa/isort
-    rev: 6.0.0
+    rev: 7.0.0
     hooks:
     -   id: isort
         name: isort (python)
 
 -   repo: https://github.com/psf/black-pre-commit-mirror
-    rev: 25.1.0
+    rev: 26.1.0
     hooks:
     -   id: black
-        language_version: python3.13
+        language_version: python3.14
 
 -   repo: https://github.com/pycqa/flake8
-    rev: 7.1.1
+    rev: 7.3.0
     hooks:
     -   id: flake8
-        additional_dependencies: [flake8-bugbear==24.12.12, flake8-pyproject==1.2.3]
+        additional_dependencies: [flake8-bugbear==25.11.29, flake8-pyproject==1.2.4]
 
 -   repo: local
     hooks:
@@ -42,6 +42,6 @@ repos:
         args: ["--rcfile=pyproject.toml"]
 
 -   repo: https://github.com/PyCQA/bandit
-    rev: 1.8.2
+    rev: 1.9.3
     hooks:
     - id: bandit
