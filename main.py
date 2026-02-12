@@ -2,7 +2,7 @@
 main.py
 
 Creates optimal team based on budget, player cost and predicted player points.
-Allows weighting of teams and forced selection of players.
+Allows weighting of teams and forced selection/deselection of players.
 """
 
 from collections import defaultdict
@@ -30,6 +30,11 @@ POSITIONS = {
 }
 
 # TODO: Decide whether unconfirmed players are / aren't selectable
+# TODO: You may want to pick a non-starter purely because they are cheap
+#       to free up points for other players - this currently can't
+#       happen. This should be permitted by allowing selection of
+#       non-starters and givingvpotential low-scorers a zero score, or
+#       moving to a score-per-minute and expected-minutes approach.
 
 
 class Dataset(BaseModel):
@@ -281,11 +286,18 @@ class Model:
             return
         print("Team optimised.")
         print("\nTeam Sheet:")
+        header = "No.  Name                     Team   Cost Points"
+        print(header + "\n" + "-" * len(header))
+
         for number, id_ in sorted(self.team.items()):
-            name = self.players[id_].name
+            player = self.players[id_]
+            name = player.name
             player_str = f"{name or "---"}{" [C]" if id_ == self.captain else ""}"
             country_str = f" ({self.players[id_].country})" if name else ""
-            print(f"{number:>2}:  {player_str:<24}{country_str}")
+            print(
+                f"{number:>2}:  {player_str:<24}{country_str}  "
+                f"{player.cost:4.1f}  {player.points:5.2f}"
+            )
         if self.supersub:
             ss_name = self.players[self.supersub].name
             ss_country = self.players[self.supersub].country
