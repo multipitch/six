@@ -4,28 +4,12 @@ data_parser.py
 Make sense of raw 6 nations JSON data.
 """
 
-from __future__ import annotations
+import json
+from collections import Counter
+from typing import Annotated, Any, TypedDict
 
-from collections import defaultdict
-from typing import Any, TypedDict
+from pydantic import BaseModel, BeforeValidator, Field, RootModel, field_validator
 
-import pandas as pd
-from pydantic import BaseModel, Field, RootModel, field_validator
-
-# TODO: This code seems pretty repetitive - i.e. creating Pydantic
-#       objects to then create other classes that are quite similar.
-#       Need to figure out what the end goal is - perhaps a
-#       big dataframe or CSV file, rather than an OOP approach.
-#       - Consider more concise code at
-#         https://github.com/david-sykes/fantasy-rugby-streamlit.
-#         and have a think of what can be gleaned from that approach
-#       - A table with each row being a player would have a large and
-#         variable number of columns with weekly stats expanding it.
-#       - A table with each row being a player on a week, there would be
-#         fewer columns, but more rows, but this might not map as well
-#         onto the task of predicting player scores
-
-# Update this every week.
 WEEK = int(input("Week: "))
 
 STAT_NAMES = {
@@ -71,23 +55,15 @@ POSITION_CODES = {
 
 TEAMS = ["IRE", "ENG", "FRA", "SCO", "ITA", "WAL"]
 
+CoercedStr = Annotated[str, BeforeValidator(str)]
 
-# TODO: Flatten this as it's an unnecessary layer
-class PlayersData(BaseModel):
-    """Relevant raw data on players."""
-
-    players: dict[int, PlayerData] = Field(alias="joueurs")
-    total: int
-
-    @field_validator("players", mode="before")
-    def _get_players(cls, v: list[PlayerData]) -> dict[str, PlayerData]:
-        return {d["id"]: d for d in v}  # type: ignore
+# TODO: What do we do with players who did not play before?
 
 
 class PlayerData(BaseModel):
     """Relevant raw data on a single player."""
 
-    player_id: int = Field(alias="id")
+    player_id: CoercedStr = Field(alias="id")  # coerce int to str
     name: str = Field(alias="nomcomplet")
     name_short: str = Field(alias="nom")
     country: str = Field(alias="trgclub")
@@ -97,7 +73,7 @@ class PlayerData(BaseModel):
     prev_appearance_types: list[str] = Field(
         alias="forme", default=DEFAULT_PREV_APPEARANCES
     )
-    # TODO: Not working where player hasn't previously appeared.
+    stats: list[PlayerMatchStatsData]
 
     @field_validator("upcoming_appearance_type", mode="before")
     def _get_upcoming_appearance_type(cls, v: dict[str, str]) -> str:
@@ -111,12 +87,15 @@ class PlayerData(BaseModel):
     def _get_position(cls, v: int) -> str:
         return POSITION_CODES[v]
 
+    @field_validator("stats", mode="before")
+    def _get_stats(cls, v: dict[str, Any]) -> Any:
+        return v["detail"]
 
-class PlayerStatsData(BaseModel):
-    """Relevant raw statistics on a single player."""
 
-    player_id: int = Field(alias="idf")
-    match_stats: list[PlayerMatchStatsData] = Field(alias="detail")
+class PlayersData(RootModel[dict[str, PlayerData]]):
+    """Relevant raw data on players."""
+
+    root: dict[str, PlayerData]
 
 
 StatDict = TypedDict("StatDict", {"libelle": str, "total": int})
@@ -154,136 +133,47 @@ class PlayerMatchStatsData(BaseModel):
         return {STAT_NAMES[stat_dict["libelle"]]: stat_dict["total"] for stat_dict in v}
 
 
-class PlayersStatsData(RootModel[dict[int, PlayerStatsData]]):
-    """Relevant raw statsitics for all players."""
+def main() -> int:
+    """Parse raw stats to create a data file to use with main.py"""
 
-    def __getitem__(self, key: int) -> PlayerStatsData:
-        return self.root[key]
+    with open("data/raw_stats.json", encoding="utf-8") as fp:
+        raw_stats = json.load(fp)
 
+    players_data = PlayersData.model_validate_json(json.dumps(raw_stats)).root
 
-class Player:
-    """A player."""
-
-    def __init__(self, data: PlayerData, stats: PlayerStatsData) -> None:
-        self.player_id = data.player_id
-        self.name = data.name
-        self.name_short = data.name_short
-        self.country = data.country
-        self.position = data.position
-        self.upcoming_appearance_type = data.upcoming_appearance_type
-        self.cost = data.cost
-        self.match_stats: dict[int, PlayerMatchStats] = {}
-
-        self.get_match_stats(data, stats)
-
-    def get_match_stats(self, data: PlayerData, stats: PlayerStatsData) -> None:
-        """Get stats for all matches."""
-        if len(data.prev_appearance_types) != len(stats.match_stats):
-            print(f"Prev stats error: {self.name}")
-        else:
-            for i, player_match_stats_data in enumerate(stats.match_stats):
-                self.match_stats[i] = PlayerMatchStats(
-                    data.prev_appearance_types[i], player_match_stats_data
-                )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dict for entry into a dataframe."""
-        dict_: dict[str, Any] = {}
-        dict_["player_id"] = self.player_id
-        dict_["name"] = self.name
-        dict_["name_short"] = self.name_short
-        dict_["country"] = self.country
-        dict_["position"] = self.position
-        dict_["upcoming_appearance_type"] = self.upcoming_appearance_type
-        dict_["cost"] = self.cost
-        for match_no, stats in self.match_stats.items():
-            for stat_name, stat_value in stats.__dict__.items():
-                dict_[f"{stat_name}_{match_no}"] = stat_value
-        return dict_
-
-
-class PlayerMatchStats:
-    """Statistics for a single match for a player."""
-
-    def __init__(self, appearance_type: str, data: PlayerMatchStatsData) -> None:
-        self.appearance_type = appearance_type
-        self.away = data.away
-        self.team_score = data.score[int(self.away)]
-        self.opposition = data.opposition
-        self.opposition_score = data.score[int(not self.away)]
-        self.played = data.played
-        self.minutes_played = data.minutes_played
-        self.cost_before = data.cost_before
-        self.cost_after = data.cost_after
-        self.points = data.points
-        self.man_of_the_match = data.stats["man_of_the_match"]
-        self.penalty = data.stats["penalty"]
-        self.assist = data.stats["assist"]
-        self.fifty_twenty_two = data.stats["fifty_twenty_two"]
-        self.tackle = data.stats["tackle"]
-        self.drop_goal = data.stats["drop_goal"]
-        self.scrum_win = data.stats.get("scrum_win", 0)
-        self.try_ = data.stats["try"]
-        self.red_card = data.stats["red_card"]
-        self.metres_carried = data.stats["metres_carried"]
-        self.yellow_card = data.stats["yellow_card"]
-        self.conversion = data.stats["conversion"]
-        self.offload = data.stats["offload"]
-        self.lineout_steal = data.stats["lineout_steal"]
-        self.breakdown_steal = data.stats["breakdown_steal"]
-        self.conceded_penalty = data.stats["conceded_penalty"]
-        self.defenders_beaten = data.stats["defenders_beaten"]
-
-
-if __name__ == "__main__":
-    import json
-
-    with open("data/players.json", encoding="utf-8") as fp:
-        players_json = json.load(fp)
-
-    with open("data/stats.json", encoding="utf-8") as fp:
-        stats_json = json.load(fp)
-
-    PLAYERS_DATA = PlayersData.model_validate_json(json.dumps(players_json))
-    STATS_DATA = PlayersStatsData.model_validate_json(json.dumps(stats_json))
-
-    PLAYERS = {k: Player(v, STATS_DATA[k]) for k, v in PLAYERS_DATA.players.items()}
-
-    STARTERS_BY_TEAM: dict[str, int] = defaultdict(int)
-    for p in PLAYERS.values():
-        if p.upcoming_appearance_type == "started":
-            STARTERS_BY_TEAM[p.country] += 1
+    starters_by_team = Counter(
+        p.country
+        for p in players_data.values()
+        if p.upcoming_appearance_type == "started"
+    )
 
     for team in TEAMS:
-        if STARTERS_BY_TEAM[team] == 0:
+        if starters_by_team[team] == 0:
             print(f"No team announced yet for {team}.")
-        elif STARTERS_BY_TEAM[team] != 15:
-            MSG = f"Some number of players other than 15 announced for {team}."
-            raise ValueError(MSG)
+        elif starters_by_team[team] != 15:
+            msg = f"Some number of players other than 15 announced for {team}."
+            raise ValueError(msg)
 
-    with open("data/players_clean.json", mode="w", encoding="utf-8") as fp:
-        fp.write(PLAYERS_DATA.model_dump_json(indent=4))
-    with open("data/stats_clean.json", mode="w", encoding="utf-8") as fp:
-        fp.write(STATS_DATA.model_dump_json(indent=4))
-
-    PLAYERS_DF = pd.DataFrame([p.to_dict() for p in PLAYERS.values()])
-    PLAYERS_DF.to_csv("data/data.csv")
-
-    DATA = {
+    data = {
         "budget": 200,
         "country_weights": {t: 1 for t in TEAMS},
         "players": {
-            p.name_short: {
+            p_id: {
                 "name": p.name_short,
-                "player_id": p.player_id,
                 "country": p.country,
                 "position": p.position,
                 "cost": p.cost,
-                "points": STATS_DATA[p_id].match_stats[-1].points,
+                "points": p.stats[-1].points,
                 "upcoming_appearance_type": p.upcoming_appearance_type,
             }
-            for p_id, p in PLAYERS.items()
+            for p_id, p in players_data.items()
         },
     }
     with open("data/data.json", mode="w", encoding="utf-8") as fp:
-        json.dump(DATA, fp=fp, indent=4)
+        json.dump(data, fp=fp, indent=4)
+
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
