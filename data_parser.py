@@ -172,6 +172,17 @@ def main() -> int:
     with open("data/data.json", mode="w", encoding="utf-8") as fp:
         json.dump(data, fp=fp, indent=4)
 
+    _first = True
+    for p in data["players"].values():  # type: ignore
+        if p["upcoming_appearance_type"] == "started" and not p["points"]:
+            if _first:
+                print(
+                    "Consider manually applying points to these players who "
+                    "didn't start last week:"
+                )
+            _first = False
+            print(f"{p["name"]}: cost={p["cost"]}")
+
     return 1
 
 
